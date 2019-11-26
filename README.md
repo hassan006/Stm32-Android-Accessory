@@ -100,4 +100,17 @@ void (*usbDataReceivedCallback)(uint8_t*, int);
 ```
 and 'accesoryWriteUSBDataFromRxTxBuffer' function for output transmission
  
+##UPD:Nov25, 19
+Latest HAL for Stm32F1xx will generate code with missed callback for port reset listener. Temp. fix:
+ - in file usbh_conf.c add: 
+```c
+/* USER CODE BEGIN 1 */
+void HAL_HCD_PortEnabled_Callback(HCD_HandleTypeDef *hhcd)
+{
+  USBH_LL_PortEnabled(hhcd->pData);
+}
+/* USER CODE END 1 */
+```
+and add USBH_AA_CLASS class registration before USBH_Start call.
+ 
 
