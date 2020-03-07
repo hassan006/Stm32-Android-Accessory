@@ -1,0 +1,950 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * <h2><center>&copy; Copyright (c) 2020 STMicroelectronics.
+  * All rights reserved.</center></h2>
+  *
+  * This software component is licensed by ST under BSD 3-Clause license,
+  * the "License"; You may not use this file except in compliance with the
+  * License. You may obtain a copy of the License at:
+  *                        opensource.org/licenses/BSD-3-Clause
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+#define ADDR   					0x21
+#define REG_GAIN   			0x00
+#define REG_BLUE   			0x01
+#define REG_RED   			0x02
+#define REG_COM1   			0x04
+#define REG_VREF   			0x03
+#define REG_COM4   			0x0d
+#define REG_COM5   			0x0e
+#define REG_COM6   			0x0f
+#define REG_AECH   			0x10
+#define REG_CLKRC   		0x11
+#define REG_COM7   			0x12
+#define COM7_RGB   			0x04
+#define REG_COM8   			0x13
+#define COM8_FASTAEC   	0x80    // Enable fast AGC/AEC
+#define COM8_AECSTEP   	0x40    // Unlimited AEC step size
+#define COM8_BFILT   		0x20    // Band filter enable
+#define COM8_AGC   			0x04    // Auto gain enable
+#define COM8_AWB   			0x02    // White balance enable
+#define COM8_AEC   			0x0
+#define REG_COM9   			0x14
+#define REG_COM10   		0x15
+#define REG_COM14   		0x3E
+#define REG_SCALING_DCWCTR   		0x72
+#define REG_SCALING_PCLK_DIV   	0x73
+#define REG_COM11   		0x3B
+#define COM11_NIGHT   	0x80
+#define COM11_NMFR   		0x60
+#define COM11_HZAUTO   	0x10
+#define COM11_50HZ   		0x08
+#define COM11_EXP   		0x0
+#define REG_TSLB   			0x3A
+#define REG_RGB444   		0x8C
+#define REG_COM15   		0x40
+#define COM15_RGB565   	0x10
+#define COM15_R00FF   	0xc0
+#define REG_HSTART   		0x17
+#define REG_HSTOP   		0x18
+#define REG_HREF   			0x32
+#define REG_VSTART   		0x19
+#define REG_VSTOP   		0x1A
+#define REG_COM3   			0x0C
+#define REG_MVFP   			0x1E
+#define REG_COM13   		0x3d
+#define COM13_UVSAT   	0x40
+#define SCALING_DCWCTR  0x72
+#define SCALING_PCLK_DIV   0x73
+#define REG_BD50MAX   0xa5
+#define REG_BD60MAX   0xab
+#define REG_AEW   		0x24
+#define REG_AEB   		0x25
+#define REG_VPT   		0x26
+#define REG_HAECC1   	0x9f
+#define REG_HAECC2   	0xa0
+#define REG_HAECC3   	0xa6
+#define REG_HAECC4   	0xa7
+#define REG_HAECC5   	0xa8
+#define REG_HAECC6   	0xa9
+#define REG_HAECC7   	0xaa
+#define REG_COM12   	0x3c
+#define REG_GFIX   		0x69
+#define REG_COM16   	0x41
+#define COM16_AWBGAIN 0x08
+#define REG_EDGE   		0x3f
+#define REG_REG76   	0x76
+#define ADCCTR0   		0x20
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+				uint8_t Vsync;
+				uint32_t count;
+				uint8_t CMOS_Data[38400];
+				uint8_t ov_addres=0x42;
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+I2C_HandleTypeDef hi2c1;
+
+TIM_HandleTypeDef htim1;
+
+UART_HandleTypeDef huart2;
+DMA_HandleTypeDef hdma_usart2_tx;
+
+/* USER CODE BEGIN PV */
+
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_USART2_UART_Init(void);
+static void MX_I2C1_Init(void);
+static void MX_TIM1_Init(void);
+/* USER CODE BEGIN PFP */
+		void MB_I2C_writeRegister(uint8_t reg ,uint8_t value)
+ {
+
+	uint8_t data[2];
+	data[0]=reg;
+	data[1]=value;
+  //HAL_I2C_Mem_Write(&hi2c1,ov_addres, data[0] ,I2C_MEMADD_SIZE_8BIT,&data[1],1,100);
+	HAL_I2C_Master_Transmit(&hi2c1,ov_addres,data,2,10);
+}
+ 
+		void ov_write(uint8_t reg ,uint8_t value)
+ {
+
+	uint8_t data[2];
+	data[0]=reg;
+	data[1]=value;
+	HAL_I2C_Master_Transmit(&hi2c1,ov_addres,data,2,10);
+}
+
+
+			void Delay_us1 (uint16_t delay2)
+{
+				__HAL_TIM_SET_COUNTER (&htim1,0);
+while (__HAL_TIM_GET_COUNTER(&htim1)< delay2 );
+}
+			void Delay_us(uint16_t delay)
+{
+		uint16_t	delay3=(delay*100);
+		Delay_us1 (delay3);
+}
+
+			void camera_RGBRaw(void)
+{
+	
+  MB_I2C_writeRegister(0x3a, 0x04);
+	MB_I2C_writeRegister(0x40, 0xd0);
+	MB_I2C_writeRegister(0x12, 0x14);
+	MB_I2C_writeRegister(0x32, 0x80);
+	MB_I2C_writeRegister(0x17, 0x16);
+	MB_I2C_writeRegister(0x18, 0x04);
+	MB_I2C_writeRegister(0x19, 0x02);
+	MB_I2C_writeRegister(0x1a, 0x7b);
+	MB_I2C_writeRegister(0x03, 0x06);
+	MB_I2C_writeRegister(0x0c, 0x00);
+	MB_I2C_writeRegister(0x3e, 0x00);
+	MB_I2C_writeRegister(0x70, 0x00);
+	MB_I2C_writeRegister(0x71, 0x00);
+	MB_I2C_writeRegister(0x72, 0x11);
+	MB_I2C_writeRegister(0x73, 0x00);
+	MB_I2C_writeRegister(0xa2, 0x02);
+	MB_I2C_writeRegister(0x11, 0x81);
+	MB_I2C_writeRegister(0x7a, 0x20);
+	MB_I2C_writeRegister(0x7b, 0x1c);
+	MB_I2C_writeRegister(0x7c, 0x28);
+  MB_I2C_writeRegister(0x7d, 0x3c);
+  MB_I2C_writeRegister(0x7e, 0x55);
+	MB_I2C_writeRegister(0x7f, 0x68);
+	MB_I2C_writeRegister(0x80, 0x76);
+	MB_I2C_writeRegister(0x81, 0x80);
+	MB_I2C_writeRegister(0x82, 0x88);
+	MB_I2C_writeRegister(0x83, 0x8f);
+	MB_I2C_writeRegister(0x84, 0x96);
+	MB_I2C_writeRegister(0x85, 0xa3);
+	MB_I2C_writeRegister(0x86, 0xaf);
+	MB_I2C_writeRegister(0x87, 0xc4);
+	MB_I2C_writeRegister(0x88, 0xd7);
+	MB_I2C_writeRegister(0x89, 0xe8);
+	MB_I2C_writeRegister(0x13, 0xe0);
+	MB_I2C_writeRegister(0x00, 0x00);
+	MB_I2C_writeRegister(0x10, 0x00);
+	MB_I2C_writeRegister(0x0d, 0x00);
+	MB_I2C_writeRegister(0x14, 0x28);
+	MB_I2C_writeRegister(0xa5, 0x05);
+  MB_I2C_writeRegister(0xab, 0x07);
+	MB_I2C_writeRegister(0x24, 0x75);
+	MB_I2C_writeRegister(0x25, 0x63);
+	MB_I2C_writeRegister(0x26, 0xA5);
+	MB_I2C_writeRegister(0x9f, 0x78);
+	MB_I2C_writeRegister(0xa0, 0x68);
+	MB_I2C_writeRegister(0xa1, 0x03);
+	MB_I2C_writeRegister(0xa6, 0xdf);
+	MB_I2C_writeRegister(0xa7, 0xdf);
+	MB_I2C_writeRegister(0xa8, 0xf0);
+	MB_I2C_writeRegister(0xa9, 0x90);
+	MB_I2C_writeRegister(0xaa, 0x94);
+	MB_I2C_writeRegister(0x13, 0xe5);
+	MB_I2C_writeRegister(0x0e, 0x61);
+	MB_I2C_writeRegister(0x0f, 0x4b);
+	MB_I2C_writeRegister(0x16, 0x02);
+	MB_I2C_writeRegister(0x1e, 0x17);
+	MB_I2C_writeRegister(0x21, 0x02);
+	MB_I2C_writeRegister(0x22, 0x91);
+	MB_I2C_writeRegister(0x29, 0x07);
+	MB_I2C_writeRegister(0x33, 0x0b);
+	MB_I2C_writeRegister(0x35, 0x0b);
+	MB_I2C_writeRegister(0x37, 0x1d);
+	MB_I2C_writeRegister(0x38, 0x71);
+	MB_I2C_writeRegister(0x39, 0x2a);
+	MB_I2C_writeRegister(0x3c, 0x78);
+	MB_I2C_writeRegister(0x4d, 0x40);
+	MB_I2C_writeRegister(0x4e, 0x20);
+	MB_I2C_writeRegister(0x69, 0x00);
+	MB_I2C_writeRegister(0x6b, 0x00);
+	MB_I2C_writeRegister(0x74, 0x19);
+	MB_I2C_writeRegister(0x8d, 0x4f);
+	MB_I2C_writeRegister(0x8e, 0x00);
+	MB_I2C_writeRegister(0x8f, 0x00);
+	MB_I2C_writeRegister(0x90, 0x00);
+	MB_I2C_writeRegister(0x91, 0x00);
+	MB_I2C_writeRegister(0x92, 0x00);
+	MB_I2C_writeRegister(0x96, 0x00);
+	MB_I2C_writeRegister(0x9a, 0x80);
+	MB_I2C_writeRegister(0xb0, 0x84);
+	MB_I2C_writeRegister(0xb1, 0x0c);
+	MB_I2C_writeRegister(0xb2, 0x0e);
+	MB_I2C_writeRegister(0xb3, 0x82);
+	MB_I2C_writeRegister(0xb8, 0x0a);
+	MB_I2C_writeRegister(0x43, 0x14);
+	MB_I2C_writeRegister(0x44, 0xf0);
+	MB_I2C_writeRegister(0x45, 0x34);
+	MB_I2C_writeRegister(0x46, 0x58);
+	MB_I2C_writeRegister(0x47, 0x28);
+	MB_I2C_writeRegister(0x48, 0x3a);
+	MB_I2C_writeRegister(0x59, 0x88);
+	MB_I2C_writeRegister(0x5a, 0x88);
+	MB_I2C_writeRegister(0x5b, 0x44);
+	MB_I2C_writeRegister(0x5c, 0x67);
+	MB_I2C_writeRegister(0x5d, 0x49);
+	MB_I2C_writeRegister(0x5e, 0x0e);
+	MB_I2C_writeRegister(0x64, 0x04);
+	MB_I2C_writeRegister(0x65, 0x20);
+	MB_I2C_writeRegister(0x66, 0x05);
+	MB_I2C_writeRegister(0x94, 0x04);
+	MB_I2C_writeRegister(0x95, 0x08);
+	MB_I2C_writeRegister(0x6c, 0x0a);
+	MB_I2C_writeRegister(0x6d, 0x55);
+	MB_I2C_writeRegister(0x6e, 0x11);
+	MB_I2C_writeRegister(0x6f, 0x9f);
+	MB_I2C_writeRegister(0x6a, 0x40);
+	MB_I2C_writeRegister(0x01, 0x40);
+	MB_I2C_writeRegister(0x02, 0x40);
+	MB_I2C_writeRegister(0x13, 0xe7);
+	MB_I2C_writeRegister(0x15, 0x02);
+	MB_I2C_writeRegister(0x4f, 0x80);
+	MB_I2C_writeRegister(0x50, 0x80);
+	MB_I2C_writeRegister(0x51, 0x00);
+	MB_I2C_writeRegister(0x52, 0x22);
+	MB_I2C_writeRegister(0x53, 0x5e);
+	MB_I2C_writeRegister(0x54, 0x80);
+	MB_I2C_writeRegister(0x58, 0x9e);
+	MB_I2C_writeRegister(0x41, 0x08);
+	MB_I2C_writeRegister(0x3f, 0x00);
+	MB_I2C_writeRegister(0x75, 0x05);
+	MB_I2C_writeRegister(0x76, 0xe1);
+	MB_I2C_writeRegister(0x4c, 0x00);
+	MB_I2C_writeRegister(0x77, 0x01);
+	MB_I2C_writeRegister(0x3d, 0xc2);
+	MB_I2C_writeRegister(0x4b, 0x09);
+	MB_I2C_writeRegister(0xc9, 0x60);
+	MB_I2C_writeRegister(0x41, 0x38);
+	MB_I2C_writeRegister(0x56, 0x40);
+	MB_I2C_writeRegister(0x34, 0x11);
+	MB_I2C_writeRegister(0x3b, 0x02);
+	MB_I2C_writeRegister(0xa4, 0x89);
+	MB_I2C_writeRegister(0x96, 0x00);
+	MB_I2C_writeRegister(0x97, 0x30);
+	MB_I2C_writeRegister(0x98, 0x20);
+	MB_I2C_writeRegister(0x99, 0x30);
+	MB_I2C_writeRegister(0x9a, 0x84);
+	MB_I2C_writeRegister(0x9b, 0x29);
+	MB_I2C_writeRegister(0x9c, 0x03);
+	MB_I2C_writeRegister(0x9d, 0x4c);
+	MB_I2C_writeRegister(0x9e, 0x3f);
+	MB_I2C_writeRegister(0x78, 0x04);
+	MB_I2C_writeRegister(0x79, 0x01);
+	MB_I2C_writeRegister(0xc8, 0xf0);
+	MB_I2C_writeRegister(0x79, 0x0f);
+	MB_I2C_writeRegister(0xc8, 0x00);
+	MB_I2C_writeRegister(0x79, 0x10);
+	MB_I2C_writeRegister(0xc8, 0x7e);
+	MB_I2C_writeRegister(0x79, 0x0a);
+	MB_I2C_writeRegister(0xc8, 0x80);
+	MB_I2C_writeRegister(0x79, 0x0b);
+	MB_I2C_writeRegister(0xc8, 0x01);
+	MB_I2C_writeRegister(0x79, 0x0c);
+	MB_I2C_writeRegister(0xc8, 0x0f);
+	MB_I2C_writeRegister(0x79, 0x0d);
+	MB_I2C_writeRegister(0xc8, 0x20);
+	MB_I2C_writeRegister(0x79, 0x09);
+	MB_I2C_writeRegister(0xc8, 0x80);
+	MB_I2C_writeRegister(0x79, 0x02);
+	MB_I2C_writeRegister(0xc8, 0xc0);
+	MB_I2C_writeRegister(0x79, 0x03);
+	MB_I2C_writeRegister(0xc8, 0x40);
+	MB_I2C_writeRegister(0x79, 0x05);
+	MB_I2C_writeRegister(0xc8, 0x30);
+	MB_I2C_writeRegister(0x79, 0x26);
+	MB_I2C_writeRegister(0x09, 0x03);
+	MB_I2C_writeRegister(0x3b, 0x42);
+}
+			void camera_saturation(int s)  //-2 to 2
+{
+	//color matrix values
+	MB_I2C_writeRegister(0x4f, 0x80 + 0x20 * s);
+	MB_I2C_writeRegister( 0x50, 0x80 + 0x20 * s);
+	MB_I2C_writeRegister( 0x51, 0x00);
+	MB_I2C_writeRegister( 0x52, 0x22 + (0x11 * s) / 2);
+	MB_I2C_writeRegister( 0x53, 0x5e + (0x2f * s) / 2);
+	MB_I2C_writeRegister( 0x54, 0x80 + 0x20 * s);
+	MB_I2C_writeRegister( 0x58, 0x9e);  //matrix signs
+}
+
+			void camera_frameControl(int hStart, int hStop, int vStart, int vStop)
+{
+	MB_I2C_writeRegister( REG_HSTART, hStart >> 3);
+	MB_I2C_writeRegister( REG_HSTOP,  hStop >> 3);
+	MB_I2C_writeRegister( REG_HREF, ((hStop & 0x7) << 3) | (hStart & 0x7));
+
+	MB_I2C_writeRegister( REG_VSTART, vStart >> 2);
+	MB_I2C_writeRegister( REG_VSTOP, vStop >> 2);
+	MB_I2C_writeRegister( REG_VREF, ((vStop & 0x3) << 2) | (vStart & 0x03));
+}
+
+			void camera_QQVGA(void)
+{
+	//160x120 (1/4)
+	MB_I2C_writeRegister( REG_COM14, 0x1a); //pixel clock divided by 4, manual scaling enable, DCW and PCLK controlled by register
+	MB_I2C_writeRegister( SCALING_DCWCTR, 0x22); //downsample by 4
+	MB_I2C_writeRegister( SCALING_PCLK_DIV, 0xf2); //pixel clock divided by 4
+}
+			void camera_QQVGARGB565(void)
+{
+	
+	MB_I2C_writeRegister( REG_COM7, 0x80);  //all registers default
+			
+	MB_I2C_writeRegister( REG_CLKRC, 0x80); //double clock
+	MB_I2C_writeRegister( REG_COM11, 0x8 | 0x2); //enable auto 50/60Hz detect + exposure timing can be less...
+	MB_I2C_writeRegister( REG_TSLB, 0x4); //sequence UYVY
+
+	MB_I2C_writeRegister( REG_COM7, 0x4); //RGB
+	MB_I2C_writeRegister( REG_COM15, 0xC0 | 0x10); //RGB565
+
+	camera_frameControl(192, 48, 8, 488); //no clue why horizontal needs such strange values, vertical works ok
+	
+	MB_I2C_writeRegister( REG_COM10, 0x02); //VSYNC negative
+	MB_I2C_writeRegister( REG_COM3, 0x04);  //DCW enable
+	MB_I2C_writeRegister( REG_MVFP, 0x2b);  //mirror flip
+
+	camera_QQVGA();
+	
+	MB_I2C_writeRegister( 0xb0, 0x84);// no clue what this is but it's most important for colors
+	camera_saturation(0);
+	MB_I2C_writeRegister( 0x13, 0xe7); //AWB on
+	MB_I2C_writeRegister( 0x6f, 0x9f); // Simple AWB
+}
+
+			void PulsePin(int PinNumber, int DurationMicroSecs)
+{
+			HAL_GPIO_WritePin(GPIOF, PinNumber ,GPIO_PIN_SET); // Sets the pin on
+			Delay_us(DurationMicroSecs); // Pauses for DurationMicroSecs microseconds
+			HAL_GPIO_WritePin(GPIOF, PinNumber ,GPIO_PIN_RESET); // Sets the pin off
+			Delay_us(DurationMicroSecs); // Pauses for DurationMicroSecs microseconds 
+}
+			void PulseLowEnabledPin(int PinNumber, int DurationMicroSecs)
+{
+//For Low Enabled Pins , 0 = on and 1 = off
+		HAL_GPIO_WritePin(GPIOF, PinNumber ,GPIO_PIN_RESET); // Sets the pin on
+		Delay_us(DurationMicroSecs); // Pauses for DurationMicroSecs microseconds
+		HAL_GPIO_WritePin(GPIOF, PinNumber ,GPIO_PIN_SET);  // Sets the pin off
+		Delay_us(DurationMicroSecs); // Pauses for DurationMicroSecs microseconds
+}
+
+
+
+
+
+
+
+
+
+void qvga_int(void)
+{	
+////OV7670 QVGA RGB565;
+	ov_write(0x3a, 0x04);
+	ov_write(0x40, 0x10);
+	ov_write(0x12, 0x14);
+	ov_write(0x32, 0x80);
+	ov_write(0x17, 0x16);
+	ov_write(0x18, 0x04);
+	ov_write(0x19, 0x02);
+	ov_write(0x1a, 0x7b);
+	ov_write(0x03, 0x06);
+	ov_write(0x0c, 0x0c);
+	ov_write(0x15, 0x02);
+	ov_write(0x3e, 0x00);
+	ov_write(0x70, 0x00);
+	ov_write(0x71, 0x01);
+	ov_write(0x72, 0x11);
+	ov_write(0x73, 0x09);
+	ov_write(0xa2, 0x02);
+	ov_write(0x11, 0x00);
+	ov_write(0x7a, 0x20);
+	ov_write(0x7b, 0x1c);
+	ov_write(0x7c, 0x28);
+	ov_write(0x7d, 0x3c);
+	ov_write(0x7e, 0x55);
+	ov_write(0x7f, 0x68);
+	ov_write(0x80, 0x76);
+	ov_write(0x81, 0x80);
+	ov_write(0x82, 0x88);
+	ov_write(0x83, 0x8f);
+	ov_write(0x84, 0x96);
+	ov_write(0x85, 0xa3);
+	ov_write(0x86, 0xaf);
+	ov_write(0x87, 0xc4);
+	ov_write(0x88, 0xd7);
+	ov_write(0x89, 0xe8);
+	ov_write(0x13, 0xe0);
+	ov_write(0x00, 0x00);
+	ov_write(0x10, 0x00);
+	ov_write(0x0d, 0x00);
+	ov_write(0x14, 0x20);
+	ov_write(0xa5, 0x05);
+	ov_write(0xab, 0x07);
+	ov_write(0x24, 0x75);
+	ov_write(0x25, 0x63);
+	ov_write(0x26, 0xA5);
+	ov_write(0x9f, 0x78);
+	ov_write(0xa0, 0x68);
+	ov_write(0xa1, 0x03);
+	ov_write(0xa6, 0xdf);
+	ov_write(0xa7, 0xdf);
+	ov_write(0xa8, 0xf0);
+	ov_write(0xa9, 0x90);
+	ov_write(0xaa, 0x94);
+	ov_write(0x13, 0xe5);
+	ov_write(0x0e, 0x61);
+	ov_write(0x0f, 0x4b);
+	ov_write(0x16, 0x02);
+	ov_write(0x1e, 0x37);
+	ov_write(0x21, 0x02);
+	ov_write(0x22, 0x91);
+	ov_write(0x29, 0x07);
+	ov_write(0x33, 0x0b);
+	ov_write(0x35, 0x0b);
+	ov_write(0x37, 0x1d);
+	ov_write(0x38, 0x71);
+	ov_write(0x39, 0x2a);
+	ov_write(0x3c, 0x78);
+	ov_write(0x4d, 0x40);
+	ov_write(0x4e, 0x20);
+	ov_write(0x69, 0x5d);
+	ov_write(0x6b, 0x40);
+	ov_write(0x74, 0x19);
+	ov_write(0x8d, 0x4f);
+	ov_write(0x8e, 0x00);
+	ov_write(0x8f, 0x00);
+	ov_write(0x90, 0x00);
+	ov_write(0x91, 0x00);
+	ov_write(0x92, 0x00);
+	ov_write(0x96, 0x00);
+	ov_write(0x9a, 0x80);
+	ov_write(0xb0, 0x84);
+	ov_write(0xb1, 0x0c);
+	ov_write(0xb2, 0x0e);
+	ov_write(0xb3, 0x82);
+	ov_write(0xb8, 0x0a);
+	ov_write(0x43, 0x14);
+	ov_write(0x44, 0xf0);
+	ov_write(0x45, 0x34);
+	ov_write(0x46, 0x58);
+	ov_write(0x47, 0x28);
+	ov_write(0x48, 0x3a);
+	ov_write(0x59, 0x88);
+	ov_write(0x5a, 0x88);
+	ov_write(0x5b, 0x44);
+	ov_write(0x5c, 0x67);
+	ov_write(0x5d, 0x49);
+	ov_write(0x5e, 0x0e);
+	ov_write(0x64, 0x04);
+	ov_write(0x65, 0x20);
+	ov_write(0x66, 0x05);
+	ov_write(0x94, 0x04);
+	ov_write(0x95, 0x08);
+	ov_write(0x6c, 0x0a);
+	ov_write(0x6d, 0x55);
+	ov_write(0x4f, 0x80);
+	ov_write(0x50, 0x80);
+	ov_write(0x51, 0x00);
+	ov_write(0x52, 0x22);
+	ov_write(0x53, 0x5e);
+	ov_write(0x54, 0x80);
+	ov_write(0x6e, 0x11);
+	ov_write(0x6f, 0x9f);
+	ov_write(0x55, 0x00);
+	ov_write(0x56, 0x40);
+	ov_write(0x57, 0x80);
+}
+
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+		/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+		Vsync = 0;
+		int h=1;
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_USART2_UART_Init();
+  MX_I2C1_Init();
+  MX_TIM1_Init();
+  /* USER CODE BEGIN 2 */
+	HAL_TIM_Base_Start(&htim1);
+	uint16_t OE=GPIO_PIN_0;	
+	HAL_GPIO_WritePin(GPIOF,OE,GPIO_PIN_RESET);
+
+		//camera_RGBRaw();
+		camera_QQVGARGB565();
+		//qvga_int();
+
+		uint16_t WR=GPIO_PIN_1;
+		uint16_t RRST=GPIO_PIN_2;
+		uint16_t WRST=GPIO_PIN_3;
+		uint16_t RCK=GPIO_PIN_5;
+		
+		//  OE-----------PF0
+		//  WR-----------PF1
+		//  RRST---------PF2
+		//  WRST---------PF3
+		//  VSYNC--------PF4
+		//  RCK----------PF5
+		PulseLowEnabledPin(WRST,1);
+		HAL_GPIO_WritePin(GPIOF, RRST,GPIO_PIN_RESET);
+			PulsePin(RCK,1);
+			PulsePin(RCK,1);
+		HAL_GPIO_WritePin(GPIOF,RRST,GPIO_PIN_SET);
+
+  /* USER CODE END 2 */
+//-------------------------------------------
+		HAL_GPIO_WritePin(GPIOF,WR,GPIO_PIN_RESET);
+//-------------------------------------------
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+		HAL_GPIO_WritePin(GPIOF,WRST,GPIO_PIN_RESET);
+		Delay_us(1);	
+		
+		while(!(HAL_GPIO_ReadPin(GPIOF,GPIO_PIN_4)))
+		while(HAL_GPIO_ReadPin(GPIOF,GPIO_PIN_4))
+		
+		HAL_GPIO_WritePin(GPIOF,WR,GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOF,WRST,GPIO_PIN_SET);
+		
+		while(!(HAL_GPIO_ReadPin(GPIOF,GPIO_PIN_4)))
+		HAL_GPIO_WritePin(GPIOF,WR,GPIO_PIN_RESET);
+	
+
+    /* USER CODE END WHILE */
+		
+		
+				HAL_GPIO_WritePin(GPIOF, RRST,GPIO_PIN_RESET);
+			
+				PulsePin(RCK,1);
+				PulsePin(RCK,1);
+				PulsePin(RCK,1);
+			
+				HAL_GPIO_WritePin(GPIOF, RRST,GPIO_PIN_SET);	
+				
+		
+				
+				   for( count = 0; count <19200; count++ )
+					{
+						//PulsePin(RCK, 1);
+						HAL_GPIO_WritePin(GPIOF, RCK,GPIO_PIN_SET);
+						Delay_us(2);
+						CMOS_Data[(h)] =((HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_0)	<< 0) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_1)  << 1) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_2)  << 2) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_3)  << 3) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_4)  << 4) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_5)  << 5) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_6)  << 6) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_7)  << 7));
+					
+						HAL_GPIO_WritePin(GPIOF, RCK,GPIO_PIN_RESET);
+						Delay_us(2);
+//-----------------------------------secound part----------------------------------------//				
+						//PulsePin(RCK, 1);
+						HAL_GPIO_WritePin(GPIOF, RCK,GPIO_PIN_SET);
+						Delay_us(2);
+						CMOS_Data[(h-1)] =((HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_0)	<< 0) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_1)  << 1) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_2)  << 2) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_3)  << 3) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_4)  << 4) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_5)  << 5) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_6)  << 6) | 
+					(HAL_GPIO_ReadPin(GPIOD,GPIO_PIN_7)  << 7));
+					
+						HAL_GPIO_WritePin(GPIOF, RCK,GPIO_PIN_RESET);
+						Delay_us(2);						
+						h=h+2;
+				}
+					h=0;
+    /* USER CODE BEGIN 3 */
+		
+		HAL_UART_Transmit(&huart2,CMOS_Data,38400,10000);
+		 Vsync++; 
+	
+	while(1){}
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
+
+  /** Configure the main internal regulator output voltage 
+  */
+  __HAL_RCC_PWR_CLK_ENABLE();
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
+  /** Initializes the CPU, AHB and APB busses clocks 
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 100;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 2;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Activate the Over-Drive mode 
+  */
+  if (HAL_PWREx_EnableOverDrive() != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Initializes the CPU, AHB and APB busses clocks 
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART2|RCC_PERIPHCLK_I2C1;
+  PeriphClkInitStruct.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
+  PeriphClkInitStruct.I2c1ClockSelection = RCC_I2C1CLKSOURCE_PCLK1;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x00C0EAFF;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Analogue filter 
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Digital filter 
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 1-1;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 0xffff-1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/** 
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void) 
+{
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+
+}
+
+/**
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOF_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOF, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3 
+                          |GPIO_PIN_5, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PF0 PF1 PF2 PF3 
+                           PF5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3 
+                          |GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PF4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOF, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PD0 PD1 PD2 PD3 
+                           PD4 PD5 PD6 PD7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3 
+                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+}
+
+/* USER CODE BEGIN 4 */
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+
+  /* USER CODE END Error_Handler_Debug */
+}
+
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{ 
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */
+
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
